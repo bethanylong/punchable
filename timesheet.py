@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+from pprint import pprint
+
+import requests
+requests.packages.urllib3.disable_warnings()
 import re
 import sys
 import getpass
@@ -21,11 +25,26 @@ def prettify_job(job_text):
     job_components = re.compile(regex_str).split(job_text)
     return str(job_code + delimiter).join(job_components)
 
+def prepare_screwed_up_form(br, form, submit=None):
+    """Modified RoboBrowser.submit_form().
+       Returns method, url, and the serialized form so the caller can tweak it."""
+    method = form.method.upper()
+    url = br._build_url(form.action) or br.url
+    payload = form.serialize(submit=submit)
+    serialized = payload.to_requests(method)
+    return (method, url, serialized)
+
+def submit_screwed_up_form(br, method, url, serialized_form, **kwargs):
+    """Modified RoboBrowser.submit_form().
+       Accepts method, url, and the tweaked form to send.."""
+    send_args = br._build_send_args(**kwargs)
+    send_args.update(serialized_form)
+    response = br.session.request(method, url, **send_args)
+    br._update_state(response)
+
 if __name__ == '__main__':
     username, password = auth()
-
     cas_url = 'https://admin.wwu.edu/pls/wwis/bwpktais.P_SelectTimeSheetRoll'
-
     br = RoboBrowser(history=True, parser='html.parser')
 
     # Log in via CAS
@@ -69,10 +88,50 @@ if __name__ == '__main__':
     #jobs_form['Jobs'] = job_options[0]
     job_code = job_options[job_choice]
     print 'Chose {}'.format(job_code)
-    #jobs_form['Jobs'] = job_code
-    job_fields[0]._value = None
-    job_fields[job_choice] = 0
-    br.submit_form(jobs_form)
+
+    method, url, serialized = prepare_screwed_up_form(br, jobs_form)
+    """serialized is like:
+       {'data': [(u'Jobs', u'1,S99554,00,T,8050,1'),
+                 (u'PayPeriod', u'2015,SM,22,I'),
+                 (u'Jobs', ''),
+                 (u'PayPeriod', u'2015,SM,22,I'),
+                 (u'Jobs', ''),
+                 (u'PayPeriod', u'2015,SM,22,I')]}
+    """
+    
+    bs = []
+    # dictify serialized
+    dictified_serialized = {'data': {}}
+    job_count = 0
+    for entry in serialized['data']:
+        key = entry[0]
+        value = entry[1]
+        if key not in dictified_serialized['data']:
+            dictified_serialized['data'][key] = []
+        dictified_serialized['data'][key].append(value)
+
+        if key == 'Jobs':
+            if job_count != job_choice:
+                value = ''
+                job_count += 1
+                continue #?
+            else:
+                value = job_code
+                job_count += 1
+        bs.append((key, value))
+
+    better_serialized = {'data': []}
+    better_serialized['data'].append(('Jobs', dictified_serialized['data']['Jobs'][job_choice]))
+    better_serialized['data'].append(('PayPeriod', dictified_serialized['data']['PayPeriod'][job_choice]))
+
+    better_serialized['data'] = bs
+
+    #submit_screwed_up_form(br, method, url, better_serialized)
+
+    #br.submit_form(jobs_form)
+    #form_details = serialized
+    form_details = better_serialized
+    submit_screwed_up_form(br, method, url, form_details)
 
     regex_str = '[0-9]{2}/[0-9]{2}/[0-9]{4}'
 
