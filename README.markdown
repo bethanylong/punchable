@@ -1,6 +1,8 @@
 # punchable
 Slightly less-shitty timesheet interface.
 
+*Warning*: This tool does the equivalent of navigating to web pages and pushing buttons. It is not perfect, and the pages it expects to see are subject to change. If you're at all worried about something going wrong and having your timesheet messed up, keep a record of your hours (like a screenshot) before using this.
+
 ```
 $ python timesheet.py
 Universal username: longb4
