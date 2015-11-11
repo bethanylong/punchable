@@ -122,34 +122,38 @@ if __name__ == '__main__':
     job_choice = get_job_option(poorly_scoped_table_classes, job_options)
     job_code = job_options[job_choice]
 
+    # Manipulate timesheet form with user's job choice, and submit it
     method, url, serialized = prepare_screwed_up_form(br, jobs_form)
-
     post_data_to_send = timesheet_selection_post_data(serialized, job_choice, job_code)
     form_details = {'data': post_data_to_send}
     submit_screwed_up_form(br, method, url, form_details)
 
-    regex_str = '[0-9]{2}/[0-9]{2}/[0-9]{4}'
-
     days = []
     page = 0
+    # Iterate through pages of timesheet and append each day's hours to list
     while True:
         try:
             # In one week of selected job's timesheet
             hours_table = br.find_all('table')[-3]
 
+            # Look at top line of table (headings, including dates)
+            # Add the dates we see to our list
             top_line = hours_table.find_all('tr')[0].find_all('td')
             for index, entry in enumerate(top_line):
                 try:
+                    regex_str = '[0-9]{2}/[0-9]{2}/[0-9]{4}'
                     date = re.search(regex_str, str(entry)).group()
                     days.append({'date': date, 'index': index, 'page': page})
                 except:
                     # Table entry outside of the region where hours are entered
                     pass
 
+            # Look at second line of table (hourly regular pay)
             hourly_regular = hours_table.find_all('tr')[1].find_all('td')
             for index, entry in enumerate(hourly_regular):
                 date = None
 
+                # Iterate through days we've seen, and see if any matches this cell
                 # Eww
                 for day in days:
                     if day['index'] == index and day['page'] == page:
@@ -161,13 +165,16 @@ if __name__ == '__main__':
                         else:
                             contents = float(contents)
 
+                        # Found a match
                         day['hours'] = contents
                         break
     
+            # Find "next" button
             button_form = br.get_forms()[1]
             submit_buttons = button_form.fields.getlist('ButtonSelected')
             next_button = submit_buttons[-1]
             if next_button.value != 'Next':
+                # On last page
                 break
 
             # Go to next page
