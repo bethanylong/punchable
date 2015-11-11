@@ -27,7 +27,16 @@ def prettify_job(job_text):
 
 def prepare_screwed_up_form(br, form, submit=None):
     """Modified (part of) RoboBrowser.submit_form().
-       Returns method, url, and the serialized form so the caller can tweak it."""
+       Returns method, url, and the serialized form so the caller can tweak it.
+
+       serialized is like:
+       {'data': [(u'Jobs', u'1,S99554,00,T,8050,1'),
+                 (u'PayPeriod', u'2015,SM,22,I'),
+                 (u'Jobs', ''),
+                 (u'PayPeriod', u'2015,SM,22,I'),
+                 (u'Jobs', ''),
+                 (u'PayPeriod', u'2015,SM,22,I')]}
+    """
     method = form.method.upper()
     url = br._build_url(form.action) or br.url
     payload = form.serialize(submit=submit)
@@ -42,33 +51,9 @@ def submit_screwed_up_form(br, method, url, serialized_form, **kwargs):
     response = br.session.request(method, url, **send_args)
     br._update_state(response)
 
-if __name__ == '__main__':
-    username, password = auth()
-    cas_url = 'https://admin.wwu.edu/pls/wwis/bwpktais.P_SelectTimeSheetRoll'
-    br = RoboBrowser(history=True, parser='html.parser')
-
-    # Log in via CAS
-    print
-    print 'Loading timesheet choices...'
-    br.open(cas_url)
-    cas_form = br.get_form(0)
-    cas_form['username'] = username
-    cas_form['password'] = password
-    br.submit_form(cas_form)
-
-    if at_cas_login(br):
-        print "Username/password combination is incorrect, account is locked out, or something funky is happening with redirects."
-        sys.exit(1)
-
-    # Contend with nasty-ass timesheet html
-    jobs_form = br.get_forms()[-1]
-    poorly_scoped_table_classes = br.select('td.dedefault')
-
-    job_fields = jobs_form.fields.getlist('Jobs')
-    job_options = [entry.options[0] for entry in job_fields]
-
+def get_job_option(displayed_table_entries, job_options):
     option_index = 0
-    for entry in poorly_scoped_table_classes:
+    for entry in displayed_table_entries:
         try:
             print '[{}] {} | {}'.format(option_index, prettify_job(entry.text), job_options[option_index])
             option_index += 1
@@ -79,24 +64,17 @@ if __name__ == '__main__':
     while job_choice not in range(len(job_options)):
         try:
             job_choice = int(raw_input('Select a job from above (index in square brackets): '))
+        except KeyboardInterrupt:
+            print
+            sys.exit(0)
         except:
             pass
+    return job_choice
 
-    job_code = job_options[job_choice]
-
-    method, url, serialized = prepare_screwed_up_form(br, jobs_form)
-    """serialized is like:
-       {'data': [(u'Jobs', u'1,S99554,00,T,8050,1'),
-                 (u'PayPeriod', u'2015,SM,22,I'),
-                 (u'Jobs', ''),
-                 (u'PayPeriod', u'2015,SM,22,I'),
-                 (u'Jobs', ''),
-                 (u'PayPeriod', u'2015,SM,22,I')]}
-    """
-    
-    bs = []
+def timesheet_selection_post_data(serialized_form, job_choice, job_code):
+    post_data_to_send = []
     job_count = 0
-    for entry in serialized['data']:
+    for entry in serialized_form['data']:
         key = entry[0]
         value = entry[1]
 
@@ -108,9 +86,46 @@ if __name__ == '__main__':
             else:
                 value = job_code
                 job_count += 1
-        bs.append((key, value))
+        post_data_to_send.append((key, value))
+    return post_data_to_send
 
-    form_details = {'data': bs}
+if __name__ == '__main__':
+    try:
+        username, password = auth()
+    except KeyboardInterrupt:
+        print
+        sys.exit(0)
+
+    br = RoboBrowser(history=True, parser='html.parser')
+
+    # Log in via CAS
+    print
+    print 'Loading timesheet choices...'
+    timesheet_url = 'https://admin.wwu.edu/pls/wwis/bwpktais.P_SelectTimeSheetRoll'
+    br.open(timesheet_url)
+    cas_form = br.get_form(0)
+    cas_form['username'] = username
+    cas_form['password'] = password
+    br.submit_form(cas_form)
+
+    if at_cas_login(br):
+        print "Username/password combination is incorrect, account is locked out, or something funky is happening with redirects."
+        sys.exit(1)
+
+    # Look at timesheet selection form
+    jobs_form = br.get_forms()[-1]
+    job_fields = jobs_form.fields.getlist('Jobs')
+
+    # Get user's timesheet choice
+    job_options = [entry.options[0] for entry in job_fields]
+    poorly_scoped_table_classes = br.select('td.dedefault')
+    job_choice = get_job_option(poorly_scoped_table_classes, job_options)
+    job_code = job_options[job_choice]
+
+    method, url, serialized = prepare_screwed_up_form(br, jobs_form)
+
+    post_data_to_send = timesheet_selection_post_data(serialized, job_choice, job_code)
+    form_details = {'data': post_data_to_send}
     submit_screwed_up_form(br, method, url, form_details)
 
     regex_str = '[0-9]{2}/[0-9]{2}/[0-9]{4}'
