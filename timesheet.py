@@ -9,6 +9,8 @@ import sys
 import getpass
 from robobrowser import RoboBrowser
 
+from datetime import datetime
+
 def at_cas_login(br):
     return br.url.startswith("https://websso.wwu.edu/cas/login")
 
@@ -104,6 +106,9 @@ def hour_value(table_cell):
     else:
         return float(table_cell)
 
+def parse_date(date_str):
+    return datetime.strptime(date_str, "%m/%d/%Y").date()
+
 def get_days_and_hours(br):
     """Return a list of objects including date and number of hours for each day
        on the current page's timesheet table."""
@@ -137,7 +142,7 @@ def get_days_and_hours(br):
             # Cell in hours table that doesn't store a day's hours
             pass
 
-    return days
+    return [{'date': parse_date(day['date']), 'hours': day['hours']} for day in days]
 
 
 if __name__ == '__main__':
