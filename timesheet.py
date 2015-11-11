@@ -26,7 +26,7 @@ def prettify_job(job_text):
     return str(job_code + delimiter).join(job_components)
 
 def prepare_screwed_up_form(br, form, submit=None):
-    """Modified RoboBrowser.submit_form().
+    """Modified (part of) RoboBrowser.submit_form().
        Returns method, url, and the serialized form so the caller can tweak it."""
     method = form.method.upper()
     url = br._build_url(form.action) or br.url
@@ -35,7 +35,7 @@ def prepare_screwed_up_form(br, form, submit=None):
     return (method, url, serialized)
 
 def submit_screwed_up_form(br, method, url, serialized_form, **kwargs):
-    """Modified RoboBrowser.submit_form().
+    """Modified (part of) RoboBrowser.submit_form().
        Accepts method, url, and the tweaked form to send.."""
     send_args = br._build_send_args(**kwargs)
     send_args.update(serialized_form)
@@ -66,13 +66,10 @@ if __name__ == '__main__':
 
     job_fields = jobs_form.fields.getlist('Jobs')
     job_options = [entry.options[0] for entry in job_fields]
-    #print job_options
 
-    #for index, entry in enumerate(poorly_scoped_table_classes):
     option_index = 0
     for entry in poorly_scoped_table_classes:
         try:
-            #print prettify_job(entry.text) + ' | ' + job_options[option_index]
             print '[{}] {} | {}'.format(option_index, prettify_job(entry.text), job_options[option_index])
             option_index += 1
         except:
@@ -85,9 +82,7 @@ if __name__ == '__main__':
         except:
             pass
 
-    #jobs_form['Jobs'] = job_options[0]
     job_code = job_options[job_choice]
-    print 'Chose {}'.format(job_code)
 
     method, url, serialized = prepare_screwed_up_form(br, jobs_form)
     """serialized is like:
@@ -100,15 +95,10 @@ if __name__ == '__main__':
     """
     
     bs = []
-    # dictify serialized
-    dictified_serialized = {'data': {}}
     job_count = 0
     for entry in serialized['data']:
         key = entry[0]
         value = entry[1]
-        if key not in dictified_serialized['data']:
-            dictified_serialized['data'][key] = []
-        dictified_serialized['data'][key].append(value)
 
         if key == 'Jobs':
             if job_count != job_choice:
@@ -120,17 +110,7 @@ if __name__ == '__main__':
                 job_count += 1
         bs.append((key, value))
 
-    better_serialized = {'data': []}
-    better_serialized['data'].append(('Jobs', dictified_serialized['data']['Jobs'][job_choice]))
-    better_serialized['data'].append(('PayPeriod', dictified_serialized['data']['PayPeriod'][job_choice]))
-
-    better_serialized['data'] = bs
-
-    #submit_screwed_up_form(br, method, url, better_serialized)
-
-    #br.submit_form(jobs_form)
-    #form_details = serialized
-    form_details = better_serialized
+    form_details = {'data': bs}
     submit_screwed_up_form(br, method, url, form_details)
 
     regex_str = '[0-9]{2}/[0-9]{2}/[0-9]{4}'
