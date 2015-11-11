@@ -109,37 +109,33 @@ def get_days_and_hours(br):
        on the current page's timesheet table."""
     days = []
 
-    try:
-        # In one week of selected job's timesheet
-        hours_table = br.find_all('table')[-3]
+    # In one week of selected job's timesheet
+    hours_table = br.find_all('table')[-3]
 
-        # Look at top line of table (headings, including dates)
-        # Add the dates we see to our list
-        top_line = hours_table.find_all('tr')[0].find_all('td')
-        for index, entry in enumerate(top_line):
-            try:
-                regex_str = '[0-9]{2}/[0-9]{2}/[0-9]{4}'
-                date = re.search(regex_str, str(entry)).group()
-                days.append({'date': date, 'index': index})
-            except:
-                # Table entry outside of the region where hours are entered
-                pass
+    # Look at top line of table (headings, including dates)
+    # Add the dates we see to our list
+    top_line = hours_table.find_all('tr')[0].find_all('td')
+    for index, entry in enumerate(top_line):
+        try:
+            regex_str = '[0-9]{2}/[0-9]{2}/[0-9]{4}'
+            date = re.search(regex_str, str(entry)).group()
+            days.append({'date': date, 'index': index})
+        except:
+            # Table entry outside of the region where hours are entered
+            pass
 
-        # Look at second line of table (hourly regular pay)
-        hourly_regular = hours_table.find_all('tr')[1].find_all('td')
+    # Look at second line of table (hourly regular pay)
+    hourly_regular = hours_table.find_all('tr')[1].find_all('td')
 
-        for index, entry in enumerate(hourly_regular):
-            # Check days we've seen, see if any matches this cell,
-            # and set that list entry's hours if it does.
-            try:
-                days_index = matching_date(days, index)
-                days[days_index]['hours'] = hour_value(entry.text)
-            except:
-                # Cell in hours table that doesn't store a day's hours
-                pass
-    except:
-        # TODO: revise this
-        pass
+    for index, entry in enumerate(hourly_regular):
+        # Check days we've seen, see if any matches this cell,
+        # and set that list entry's hours if it does.
+        try:
+            days_index = matching_date(days, index)
+            days[days_index]['hours'] = hour_value(entry.text)
+        except:
+            # Cell in hours table that doesn't store a day's hours
+            pass
 
     return days
 
@@ -187,23 +183,20 @@ if __name__ == '__main__':
     page = 0
     # Iterate through pages of timesheet and append each day's hours to list
     while True:
-        try:
-            # Get data from this page
-            days += get_days_and_hours(br)
-    
-            # Find "next" button
-            button_form = br.get_forms()[1]
-            submit_buttons = button_form.fields.getlist('ButtonSelected')
-            next_button = submit_buttons[-1]
-            if next_button.value != 'Next':
-                # On last page
-                break
+        # Get data from this page
+        days += get_days_and_hours(br)
 
-            # Go to next page
-            br.submit_form(form=button_form, submit=next_button)
-            page += 1
-        except:
+        # Find "next" button
+        button_form = br.get_forms()[1]
+        submit_buttons = button_form.fields.getlist('ButtonSelected')
+        next_button = submit_buttons[-1]
+        if next_button.value != 'Next':
+            # On last page
             break
+
+        # Go to next page
+        br.submit_form(form=button_form, submit=next_button)
+        page += 1
 
     # Finally
     from pprint import pprint
