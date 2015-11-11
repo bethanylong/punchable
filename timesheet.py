@@ -89,6 +89,68 @@ def timesheet_selection_post_data(serialized_form, job_choice, job_code):
         post_data_to_send.append((key, value))
     return post_data_to_send
 
+def matching_date(days, table_index, page):
+    """Iterate through list of seen days and return the index of a match if any.
+       Match based on index and page from timesheet <table>."""
+    for list_index, day in enumerate(days):
+        if day['index'] == table_index and day['page'] == page:
+            return list_index
+    raise ValueError("Unable to match this cell in the timesheet table with a date we've seen")
+
+def matching_date(days, table_index):
+    """Iterate through list of seen days and return the index of a match if any.
+       Match based on index and page from timesheet <table>."""
+    for list_index, day in enumerate(days):
+        if day['index'] == table_index:
+            return list_index
+    raise ValueError("Unable to match this cell in the timesheet table with a date we've seen")
+
+def hour_value(table_cell):
+    if table_cell == 'Enter Hours':
+        return float(0)
+    else:
+        return float(table_cell)
+
+def get_days_and_hours(br):
+    """Return a list of objects including date and number of hours for each day
+       on the current page's timesheet table."""
+    days = []
+
+    try:
+        # In one week of selected job's timesheet
+        hours_table = br.find_all('table')[-3]
+
+        # Look at top line of table (headings, including dates)
+        # Add the dates we see to our list
+        top_line = hours_table.find_all('tr')[0].find_all('td')
+        for index, entry in enumerate(top_line):
+            try:
+                regex_str = '[0-9]{2}/[0-9]{2}/[0-9]{4}'
+                date = re.search(regex_str, str(entry)).group()
+                days.append({'date': date, 'index': index})
+            except:
+                # Table entry outside of the region where hours are entered
+                pass
+
+        # Look at second line of table (hourly regular pay)
+        hourly_regular = hours_table.find_all('tr')[1].find_all('td')
+
+        for index, entry in enumerate(hourly_regular):
+            # Check days we've seen, see if any matches this cell,
+            # and set that list entry's hours if it does.
+            try:
+                days_index = matching_date(days, index)
+                days[days_index]['hours'] = hour_value(entry.text)
+            except:
+                # Cell in hours table that doesn't store a day's hours
+                pass
+    except:
+        # TODO: revise this
+        pass
+
+    return days
+
+
 if __name__ == '__main__':
     try:
         username, password = auth()
@@ -133,41 +195,8 @@ if __name__ == '__main__':
     # Iterate through pages of timesheet and append each day's hours to list
     while True:
         try:
-            # In one week of selected job's timesheet
-            hours_table = br.find_all('table')[-3]
-
-            # Look at top line of table (headings, including dates)
-            # Add the dates we see to our list
-            top_line = hours_table.find_all('tr')[0].find_all('td')
-            for index, entry in enumerate(top_line):
-                try:
-                    regex_str = '[0-9]{2}/[0-9]{2}/[0-9]{4}'
-                    date = re.search(regex_str, str(entry)).group()
-                    days.append({'date': date, 'index': index, 'page': page})
-                except:
-                    # Table entry outside of the region where hours are entered
-                    pass
-
-            # Look at second line of table (hourly regular pay)
-            hourly_regular = hours_table.find_all('tr')[1].find_all('td')
-            for index, entry in enumerate(hourly_regular):
-                date = None
-
-                # Iterate through days we've seen, and see if any matches this cell
-                # Eww
-                for day in days:
-                    if day['index'] == index and day['page'] == page:
-                        date = day['date']
-
-                        contents = entry.text
-                        if contents == 'Enter Hours':
-                            contents = float(0)
-                        else:
-                            contents = float(contents)
-
-                        # Found a match
-                        day['hours'] = contents
-                        break
+            # Get data from this page
+            days += get_days_and_hours(br)
     
             # Find "next" button
             button_form = br.get_forms()[1]
