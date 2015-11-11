@@ -89,20 +89,13 @@ def timesheet_selection_post_data(serialized_form, job_choice, job_code):
         post_data_to_send.append((key, value))
     return post_data_to_send
 
-def matching_date(days, table_index, page):
-    """Iterate through list of seen days and return the index of a match if any.
-       Match based on index and page from timesheet <table>."""
-    for list_index, day in enumerate(days):
-        if day['index'] == table_index and day['page'] == page:
-            return list_index
-    raise ValueError("Unable to match this cell in the timesheet table with a date we've seen")
-
 def matching_date(days, table_index):
     """Iterate through list of seen days and return the index of a match if any.
        Match based on index and page from timesheet <table>."""
     for list_index, day in enumerate(days):
         if day['index'] == table_index:
             return list_index
+    # No match returned
     raise ValueError("Unable to match this cell in the timesheet table with a date we've seen")
 
 def hour_value(table_cell):
