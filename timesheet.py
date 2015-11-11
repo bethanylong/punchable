@@ -11,13 +11,20 @@ from robobrowser import RoboBrowser
 
 from datetime import datetime
 
+class TimesheetError(Exception):
+    pass
+
 def at_cas_login(br):
     return br.url.startswith("https://websso.wwu.edu/cas/login")
 
 def auth():
-    username = raw_input('Universal username: ')
-    password = getpass.getpass('Universal password: ')
-    return (username, password)
+    try:
+        username = raw_input('Universal username: ')
+        password = getpass.getpass('Universal password: ')
+        return (username, password)
+    except KeyboardInterrupt:
+        print
+        sys.exit(0)
 
 # job_text == br.select('td.dedefault')[0].text == 'Computer Assistant 5, S99554-00UR - Business Operations, 8050'
 def prettify_job(job_text):
@@ -61,9 +68,10 @@ def get_job_option(displayed_table_entries, job_options):
             option_index += 1
         except:
             pass
+    print '[{}] All of the above'.format(option_index)
 
     job_choice = -1
-    while job_choice not in range(len(job_options)):
+    while job_choice not in range(len(job_options) + 1):
         try:
             job_choice = int(raw_input('Select a job from above (index in square brackets): '))
         except KeyboardInterrupt:
@@ -109,6 +117,22 @@ def hour_value(table_cell):
 def parse_date(date_str):
     return datetime.strptime(date_str, "%m/%d/%Y").date()
 
+def week_number(date):
+    # %W has Monday as the first day of the week, just like pay weeks.
+    return int(date.strftime("%W"))
+
+def weekday_number(date):
+    # %w has 0 as Sunday and 6 as Saturday, but we want 0 to be Monday
+    # and 6 to be Sunday.
+    canonical_weekday = int(date.strftime("%w"))
+    our_weekday = canonical_weekday - 1
+    if our_weekday == -1:
+        our_weekday = 6
+    return our_weekday
+
+def weekday_name(date):
+    return date.strftime("%a")
+
 def get_days_and_hours(br):
     """Return a list of objects including date and number of hours for each day
        on the current page's timesheet table."""
@@ -124,7 +148,7 @@ def get_days_and_hours(br):
         try:
             regex_str = '[0-9]{2}/[0-9]{2}/[0-9]{4}'
             date = re.search(regex_str, str(entry)).group()
-            days.append({'date': date, 'index': index})
+            days.append({'date': parse_date(date), 'index': index})
         except:
             # Table entry outside of the region where hours are entered
             pass
@@ -142,21 +166,37 @@ def get_days_and_hours(br):
             # Cell in hours table that doesn't store a day's hours
             pass
 
-    return [{'date': parse_date(day['date']), 'hours': day['hours']} for day in days]
+    return [{'date': day['date'],
+             'week': week_number(day['date']),
+             'weekday_number': weekday_number(day['date']),
+             'weekday_name': weekday_name(day['date']),
+             'hours': day['hours']}
+            for day in days]
 
+def hours_by_week(days_list):
+    by_week = {}
+    for day in days_list:
+        if day['week'] not in by_week:
+            by_week[day['week']] = float(0)
+        by_week[day['week']] += day['hours']
+    return by_week
 
-if __name__ == '__main__':
-    try:
-        username, password = auth()
-    except KeyboardInterrupt:
-        print
-        sys.exit(0)
+def print_hours(days_list):
+    hbw = hours_by_week(days_list)
+    curr_week = None
+    for day in days_list:
+        if day['week'] != curr_week:
+            curr_week = day['week']
+            print
+            print 'Pay week {}, starting from {}: {} hours'.format(day['week'], day['date'], hbw[day['week']])
+        print '{} {}: {} hours'.format(day['weekday_name'], day['date'], day['hours'])
 
+def go_to_timesheet_home():
+    """Create a new browser object, log in via CAS, and return the object once
+       it's at the job selection page."""
     br = RoboBrowser(history=True, parser='html.parser')
 
     # Log in via CAS
-    print
-    print 'Loading timesheet choices...'
     timesheet_url = 'https://admin.wwu.edu/pls/wwis/bwpktais.P_SelectTimeSheetRoll'
     br.open(timesheet_url)
     cas_form = br.get_form(0)
@@ -165,8 +205,17 @@ if __name__ == '__main__':
     br.submit_form(cas_form)
 
     if at_cas_login(br):
-        print "Username/password combination is incorrect, account is locked out, or something funky is happening with redirects."
-        sys.exit(1)
+        raise TimesheetError("Username/password combination is incorrect, account is locked out, or something funky is happening with redirects.")
+
+    return br
+
+def get_timesheet_choice():
+    """Go to timesheet home page, gather list of timesheets/jobs, prompt user
+       for input on which one to choose, and return the choice's index and code."""
+    print
+    print 'Loading timesheet choices...'
+
+    br = go_to_timesheet_home()
 
     # Look at timesheet selection form
     jobs_form = br.get_forms()[-1]
@@ -175,8 +224,26 @@ if __name__ == '__main__':
     # Get user's timesheet choice
     job_options = [entry.options[0] for entry in job_fields]
     poorly_scoped_table_classes = br.select('td.dedefault')
-    job_choice = get_job_option(poorly_scoped_table_classes, job_options)
-    job_code = job_options[job_choice]
+    job_choice = get_job_option(poorly_scoped_table_classes, job_options) # prompt
+
+    #job_code = job_options[job_choice]
+    #return (job_choice, job_code)
+
+    jobs = []
+    if job_choice == len(job_options):
+        # "All of the above"
+        for index, job_code in enumerate(job_options):
+            jobs.append((index, job_code))
+    else:
+        jobs.append((job_choice, job_options[job_choice]))
+
+    return jobs
+
+def print_summary(job_choice, job_code):
+    print
+    print 'Getting hours for job {}...'.format(job_choice)
+    br = go_to_timesheet_home()
+    jobs_form = br.get_forms()[-1]
 
     # Manipulate timesheet form with user's job choice, and submit it
     method, url, serialized = prepare_screwed_up_form(br, jobs_form)
@@ -203,14 +270,17 @@ if __name__ == '__main__':
         br.submit_form(form=button_form, submit=next_button)
         page += 1
 
-    # Finally
-    from pprint import pprint
-    print
-    print 'Hourly Regular Time:'
-    pprint(days)
-
     hours_sum = 0
     for day in days:
         hours_sum += day['hours']
     
-    print 'Total hours: {}'.format(hours_sum)
+    print
+    print 'Total hours on this timesheet: {}'.format(hours_sum)
+
+    print_hours(days)
+
+
+if __name__ == '__main__':
+    username, password = auth()
+    for job_choice, job_code in get_timesheet_choice():
+        print_summary(job_choice, job_code)
