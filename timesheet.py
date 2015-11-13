@@ -261,8 +261,13 @@ def print_summary(job_choice, job_code):
         # Find "next" button
         button_form = br.get_forms()[1]
         submit_buttons = button_form.fields.getlist('ButtonSelected')
-        next_button = submit_buttons[-1]
-        if next_button.value != 'Next':
+        #next_button = submit_buttons[-1]
+        next_button = None
+        for button in submit_buttons:
+            if button.value == 'Next':
+                next_button = button
+                break
+        if next_button is None:
             # On last page
             break
 
