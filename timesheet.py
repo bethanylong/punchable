@@ -154,13 +154,10 @@ def submit_screwed_up_form(br, method, url, serialized_form, **kwargs):
     response = br.session.request(method, url, **send_args)
     br._update_state(response)
 
-def get_days_and_hours(br):
+def get_days_and_hours(hours_table):
     """Return a list of objects including date and number of hours for each day
        on the current page's timesheet table."""
     days = []
-
-    # In one week of selected job's timesheet
-    hours_table = br.find_all('table')[-3]
 
     # Look at top line of table (headings, including dates)
     # Add the dates we see to our list
@@ -193,6 +190,47 @@ def get_days_and_hours(br):
              'weekday_name': weekday_name(day['date']),
              'hours': day['hours']}
             for day in days]
+
+def get_all_days_and_hours(job_choice, job_code, br=None):
+    br = go_to_timesheet_home(br)
+    jobs_form = br.get_forms()[-1]
+
+    # Manipulate timesheet form with user's job choice, and submit it
+    method, url, serialized = prepare_screwed_up_form(br, jobs_form)
+    post_data_to_send = timesheet_selection_post_data(serialized, job_choice, job_code)
+    form_details = {'data': post_data_to_send}
+    submit_screwed_up_form(br, method, url, form_details)
+
+    days = []
+    page = 0
+    # Iterate through pages of timesheet and append each day's hours to list
+    while True:
+        # Get data from this page (one week of the selected timesheet)
+        hours_table = br.find_all('table')[-3]
+        days += get_days_and_hours(hours_table)
+
+        # Find "next" button
+        button_form = br.get_forms()[1]
+        next_button = find_button(button_form)
+        if next_button is None:
+            # On last page
+            break
+
+        # Go to next page
+        br.submit_form(form=button_form, submit=next_button)
+        page += 1
+
+    return days
+
+def find_button(form, name='Next'):
+    submit_buttons = form.fields.getlist('ButtonSelected')
+    next_button = None
+    for button in submit_buttons:
+        if button.value == 'Next':
+            next_button = button
+            break
+    return next_button
+    # if next_button is None: on last page
 
 def matching_date(days, table_index):
     """Iterate through list of seen days and return the index of a match if any.
@@ -246,54 +284,36 @@ def print_hours(days_list):
             print 'Pay week {}, starting from {}: {} hours'.format(day['week'], day['date'], hbw[day['week']])
         print '{} {}: {} hours'.format(day['weekday_name'], day['date'], day['hours'])
 
-def print_summary(job_choice, job_code, br=None):
-    print
-    print 'Getting hours for job {}...'.format(job_choice)
-    br = go_to_timesheet_home(br)
-    jobs_form = br.get_forms()[-1]
-
-    # Manipulate timesheet form with user's job choice, and submit it
-    method, url, serialized = prepare_screwed_up_form(br, jobs_form)
-    post_data_to_send = timesheet_selection_post_data(serialized, job_choice, job_code)
-    form_details = {'data': post_data_to_send}
-    submit_screwed_up_form(br, method, url, form_details)
-
-    days = []
-    page = 0
-    # Iterate through pages of timesheet and append each day's hours to list
-    while True:
-        # Get data from this page
-        days += get_days_and_hours(br)
-
-        # Find "next" button
-        button_form = br.get_forms()[1]
-        submit_buttons = button_form.fields.getlist('ButtonSelected')
-        #next_button = submit_buttons[-1]
-        next_button = None
-        for button in submit_buttons:
-            if button.value == 'Next':
-                next_button = button
-                break
-        if next_button is None:
-            # On last page
-            break
-
-        # Go to next page
-        br.submit_form(form=button_form, submit=next_button)
-        page += 1
-
-    hours_sum = 0
-    for day in days:
-        hours_sum += day['hours']
-    
-    print
-    print 'Total hours on this timesheet: {}'.format(hours_sum)
-
-    print_hours(days)
-
 
 if __name__ == '__main__':
     username, password = auth()
     br = fresh_browser()
-    for job_choice, job_code in get_timesheet_choice(br):
-        print_summary(job_choice, job_code, br)
+
+    total_hours = {} # By week, over all selected jobs
+    jobs = get_timesheet_choice(br)
+    for job_choice, job_code in jobs:
+        print
+        print 'Getting hours for job {}...'.format(job_choice)
+
+        days = get_all_days_and_hours(job_choice, job_code, br)
+
+        hours_sum = 0
+        for day in days:
+            hours_sum += day['hours']
+        
+        print
+        print 'Total hours on this timesheet: {}'.format(hours_sum)
+
+        hbw = hours_by_week(days)
+        for week in hbw:
+            if week not in total_hours:
+                total_hours[week] = 0
+
+            total_hours[week] += hbw[week]
+
+        print_hours(days)
+
+    if len(jobs) > 1:
+        print
+        print 'Hours by pay week over all jobs:'
+        pprint(total_hours)
